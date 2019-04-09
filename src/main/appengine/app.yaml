@@ -1,7 +1,8 @@
-runtime: java8
+runtime: java
 env: flex
-#runtime_config:
-#  jdk: openjdk8
+runtime_config:
+  jdk: openjdk8
+#  server: jetty8
 #env_variables:
 #  SPRING_PROFILES_ACTIVE: "gcp"
 #handlers:

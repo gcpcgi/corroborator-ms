@@ -4,6 +4,8 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.ResponseBody;
 
 import com.corroborator.rest.bean.FileStorageBean;
 
@@ -16,6 +18,7 @@ public class CorroboratorMsApplication {
 	}
 
 	@RequestMapping("/")
+	@ResponseBody
 	public String home() {
 		return "Hello World! The Corroborator microservices are up and running!";
 	}

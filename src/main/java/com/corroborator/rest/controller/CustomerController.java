@@ -1,9 +1,17 @@
 package com.corroborator.rest.controller;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.channels.Channels;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.Part;
 
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
+import org.joda.time.format.DateTimeFormat;
+import org.joda.time.format.DateTimeFormatter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +31,13 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import com.google.appengine.tools.cloudstorage.GcsFileOptions;
+import com.google.appengine.tools.cloudstorage.GcsFilename;
+import com.google.appengine.tools.cloudstorage.GcsOutputChannel;
+import com.google.appengine.tools.cloudstorage.GcsService;
+import com.google.appengine.tools.cloudstorage.GcsServiceFactory;
+import com.google.appengine.tools.cloudstorage.RetryParams;
+
 import com.corroborator.rest.payload.UploadFileResponse;
 import com.corroborator.rest.service.FileStorageService;
 
@@ -32,7 +47,90 @@ import com.corroborator.rest.service.FileStorageService;
 public class CustomerController extends BaseController {
 
 	private static final Logger logger = LoggerFactory.getLogger(CustomerController.class);
+	
+	private final GcsService gcsService = GcsServiceFactory.createGcsService(
+											new RetryParams.Builder()
+								            .initialRetryDelayMillis(10)
+								            .retryMaxAttempts(10)
+								            .totalRetryPeriodMillis(15000)
+								            .build());
+	
+	private static final int BUFFER_SIZE = 2 * 1024 * 1024;
+	private final String bucket = "corroborator-ms-file";
 
+	private String storeImage(Part filePart) throws IOException {
+
+		String filename = uploadedFilename(filePart); // Extract filename
+		GcsFileOptions.Builder builder = new GcsFileOptions.Builder();
+
+		builder.acl("public-read"); // Set the file to be publicly viewable
+		GcsFileOptions instance = GcsFileOptions.getDefaultInstance();
+		GcsOutputChannel outputChannel;
+		GcsFilename gcsFile = new GcsFilename(bucket, filename);
+		outputChannel = gcsService.createOrReplace(gcsFile, instance);
+		copy(filePart.getInputStream(), Channels.newOutputStream(outputChannel));
+
+		return filename; // Return the filename without GCS/bucket appendage
+	}
+	
+	private String uploadedFilename(final Part part) {
+
+		final String partHeader = part.getHeader("content-disposition");
+
+		for (String content : part.getHeader("content-disposition").split(";")) {
+			if (content.trim().startsWith("filename")) {
+				// Append a date and time to the filename
+				DateTimeFormatter dtf = DateTimeFormat.forPattern("-YYYY-MM-dd-HHmmssSSS");
+				DateTime dt = DateTime.now(DateTimeZone.UTC);
+				String dtString = dt.toString(dtf);
+				final String fileName = dtString + content.substring(content.indexOf('=') + 1).trim().replace("\"", "");
+
+				return fileName;
+			}
+		}
+		return null;
+	}
+	
+	private void copy(InputStream input, OutputStream output) throws IOException {
+		try {
+			byte[] buffer = new byte[BUFFER_SIZE];
+			int bytesRead = input.read(buffer);
+			while (bytesRead != -1) {
+				output.write(buffer, 0, bytesRead);
+				bytesRead = input.read(buffer);
+			}
+		} finally {
+			input.close();
+			output.close();
+		}
+	}
+	
+	
+
+	@PostMapping("/storeFileToGCS")
+	public UploadFileResponse storeFileToGCS(@RequestParam("file") Part filePart) {
+		String fileName;
+		try {
+			fileName = storeImage(filePart);
+
+			String fileDownloadUri = ServletUriComponentsBuilder.fromCurrentContextPath()
+					.path("/downloadFile/")
+					.path(fileName).toUriString();
+
+			return new UploadFileResponse(fileName, fileDownloadUri, filePart.getContentType(), filePart.getSize());
+
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+		return null;
+	}
+	
+	
+	
+	
+	// ----------------------------------------- OLDER METHOD BELOW ------------------------------------------
 	@Autowired
     private FileStorageService fileStorageService;
 
